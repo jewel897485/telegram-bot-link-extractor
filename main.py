@@ -9,23 +9,12 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 # ✅ Google Sheet Web App URL
 GOOGLE_SHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbwkMMe401QPlBeOsypfnxu_qXcJB5qjq5Y_P7q3WXASj8FdCjHAtq3ZWRt-6_hJMiCsvQ/exec"
 
-# ✅ Google Sheet Checker URL (new endpoint to check if URL already exists)
-GOOGLE_SHEET_CHECK_URL = "https://script.google.com/macros/s/AKfycbwkMMe401QPlBeOsypfnxu_qXcJB5qjq5Y_P7q3WXASj8FdCjHAtq3ZWRt-6_hJMiCsvQ/exec?action=check&url="
-
 app = Flask(__name__)
 
 # 🔍 Extract only URL from message
 def extract_url(text):
     match = re.search(r'https?://\S+', text)
     return match.group(0) if match else None
-
-# ✅ Check if link already exists in Google Sheet
-def is_duplicate(url):
-    try:
-        response = requests.get(GOOGLE_SHEET_CHECK_URL + url)
-        return response.text.strip() == "exists"
-    except:
-        return False
 
 # 📥 Handle Telegram Webhook
 @app.route('/', methods=['POST'])
@@ -42,9 +31,8 @@ def webhook():
             # ✅ Reply with only the link
             requests.post(TELEGRAM_API, json={"chat_id": chat_id, "text": url})
             
-            # ✅ Check duplicate and then send to Google Sheet
-            if not is_duplicate(url):
-                requests.post(GOOGLE_SHEET_WEBHOOK, json={"url": url})
+            # ✅ Send to Google Sheet
+            requests.post(GOOGLE_SHEET_WEBHOOK, json={"url": url})
             
             # ✅ Delete original message
             requests.post(f"https://api.telegram.org/bot{TOKEN}/deleteMessage", json={
