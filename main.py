@@ -1,58 +1,50 @@
-from fastapi import FastAPI, Request, HTTPException
-import httpx
-import os
+from flask import Flask, request
+import re
+import requests
 
-app = FastAPI()
+# ✅ Bot Token
+TOKEN = "8116086574:AAGP-4fibBwa4DqmGdTiIDmjijUioGh12xM"
+TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-BOT_TOKEN = "6897920120:AAG---REPLACE-YOUR-TOKEN---g"  # ← Put your full Bot Token
-WEBHOOK_SECRET = "1fffa43"  # ← Your Webhook Path
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwoq2rokXRRIwFr60OKqJI8MhtvVpIepxCKZ9A-n7CV_COxQIdsMiKQ5EoMhPIkn7K3bw/exec"
+# ✅ Google Sheet Web App URL
+GOOGLE_SHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbwkMMe401QPlBeOsypfnxu_qXcJB5qjq5Y_P7q3WXASj8FdCjHAtq3ZWRt-6_hJMiCsvQ/exec"
 
-ALLOWED_USER_ID = 1414414216  # ← Only you can message the bot
+app = Flask(__name__)
 
-@app.post(f"/{WEBHOOK_SECRET}")
-async def telegram_webhook(req: Request):
-    payload = await req.json()
+# 🔍 Extract only URL from message
+def extract_url(text):
+    match = re.search(r'https?://\S+', text)
+    return match.group(0) if match else None
 
-    # Extract message
-    message = payload.get("message")
-    if not message:
-        return {"ok": True}
+# 📥 Handle Telegram Webhook
+@app.route('/', methods=['POST'])
+def webhook():
+    data = request.get_json()
 
-    chat_id = message["chat"]["id"]
-    user_id = message["from"]["id"]
-    text = message.get("text", "")
+    if 'message' in data and 'text' in data['message']:
+        chat_id = data['message']['chat']['id']
+        message_id = data['message']['message_id']
+        text = data['message']['text']
+        url = extract_url(text)
 
-    # Only allow specific user
-    if user_id != ALLOWED_USER_ID:
-        await send_message(chat_id, "❌ Permission denied.")
-        return {"ok": True}
+        if url:
+            # ✅ Reply with only the link
+            requests.post(TELEGRAM_API, json={"chat_id": chat_id, "text": url})
+            
+            # ✅ Send to Google Sheet
+            requests.post(GOOGLE_SHEET_WEBHOOK, json={"url": url})
+            
+            # ✅ Delete original message
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/deleteMessage", json={
+                "chat_id": chat_id,
+                "message_id": message_id
+            })
 
-    # Extract only link from text
-    link = extract_link(text)
-    if not link:
-        await send_message(chat_id, "❌ কোনো লিংক পাওয়া যায়নি।")
-        return {"ok": True}
+    return "OK", 200
 
-    # Send to Web App
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(WEB_APP_URL, data={"link": link})
-        await send_message(chat_id, f"✅ লিংক যোগ হয়েছে:\n{link}")
-    except Exception as e:
-        await send_message(chat_id, f"❌ সমস্যা হয়েছে:\n{str(e)}")
+@app.route('/', methods=['GET'])
+def index():
+    return "Bot is running ✅", 200
 
-    return {"ok": True}
-
-def extract_link(text):
-    words = text.split()
-    for word in words:
-        if word.startswith("http://") or word.startswith("https://"):
-            return word
-    return None
-
-async def send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
-    async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
